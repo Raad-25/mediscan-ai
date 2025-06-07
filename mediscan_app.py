@@ -1,10 +1,11 @@
 import streamlit as st
-import base64
+import openai
 from PIL import Image
-from openai import OpenAI
+import base64
+import io
 
-# Load API key securely from Streamlit secrets
-client = OpenAI(api_key=st.secrets["openai_key"])
+# Load your OpenAI API key securely from Streamlit secrets
+openai.api_key = st.secrets["openai_key"]
 
 st.set_page_config(page_title="MediScan AI", layout="centered")
 st.title("🧠 MediScan AI - Medication Label Reader")
@@ -13,25 +14,33 @@ st.write("Upload a photo of your medication label and let AI extract details lik
 uploaded_file = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    # Read image bytes once
+    # Read image bytes
     image = Image.open(uploaded_file)
-    image_bytes = uploaded_file.read()
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    # Encode to base64 for GPT-4o
+    # Convert image to base64
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    image_bytes = buffered.getvalue()
     base64_image = base64.b64encode(image_bytes).decode("utf-8")
-    data_url = f"data:image/jpeg;base64,{base64_image}"
+    data_url = f"data:image/png;base64,{base64_image}"
 
-    # Send to OpenAI
-    with st.spinner("Analyzing..."):
+    st.spinner("Analyzing...")
+
+    # Use OpenAI GPT-4o to extract medication details
+    try:
+        client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a medical assistant that extracts name, dosage, and intake time from medication label images."},
-                {"role": "user", "content": [{"type": "image_url", "image_url": {"url": data_url}}]}
+                {"role": "system", "content": "You are a helpful assistant that extracts medication name, dosage, and intake time from images."},
+                {"role": "user", "content": data_url}
             ]
         )
 
-        output = response.choices[0].message.content
-        st.markdown("### 📝 Extracted Information")
-        st.write(output)
+        result = response.choices[0].message.content
+        st.success("Extraction Successful!")
+        st.markdown(result)
+
+    except openai.OpenAIError as e:
+        st.error(f"AI Error: {e}")
